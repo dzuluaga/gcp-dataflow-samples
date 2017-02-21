@@ -16,11 +16,11 @@
 
 package com.google.cloud.dataflow.examples.dz;
 
+import com.google.cloud.dataflow.examples.DebuggingWordCount;
+import com.google.cloud.dataflow.examples.MinimalWordCount;
 import com.google.cloud.dataflow.sdk.Pipeline;
 import com.google.cloud.dataflow.sdk.coders.DefaultCoder;
 import com.google.cloud.dataflow.sdk.coders.SerializableCoder;
-import com.google.cloud.dataflow.examples.MinimalWordCount;
-import com.google.cloud.dataflow.examples.DebuggingWordCount;
 import com.google.cloud.dataflow.sdk.coders.SetCoder;
 import com.google.cloud.dataflow.sdk.io.TextIO;
 import com.google.cloud.dataflow.sdk.options.*;
@@ -30,13 +30,14 @@ import com.google.cloud.dataflow.sdk.values.KV;
 import com.google.cloud.dataflow.sdk.values.PCollection;
 
 import java.io.Serializable;
+import java.util.List;
 import java.util.Set;
 
 
 /**
  * An example that counts words in Shakespeare and includes Dataflow best practices.
  *
- * <p>This class, {@link WordCountApplyFilter}, is the second in a series of four successively more detailed
+ * <p>This class, {@link WordCountTopLargestTransform}, is the second in a series of four successively more detailed
  * 'word count' examples. You may first want to take a look at {@link MinimalWordCount}.
  * After you've looked at this example, then see the {@link DebuggingWordCount}
  * pipeline, for introduction of additional concepts.
@@ -85,7 +86,7 @@ import java.util.Set;
  * <p>The input file defaults to {@code gs://dataflow-samples/shakespeare/kinglear.txt} and can be
  * overridden with {@code --inputFile}.
  */
-public class WordCountApplyFilter {
+public class WordCountTopLargestTransform {
 
   /**
    * Concept #2: You can make your pipeline code less verbose by defining your DoFns statically out-
@@ -130,10 +131,13 @@ public class WordCountApplyFilter {
   }
 
   /** A DoFn that converts a Word and Count into a printable string. */
-  public static class FormatComparableAsTextFn extends DoFn<WordCount, String> {
+  public static class FormatComparableAsTextFn extends DoFn<List<WordCount>, String> {
     @Override
     public void processElement(ProcessContext c) {
-      c.output(c.element().name + ": " + c.element().qty);  // c.element().name  c.element().qty
+      //c.output(c.element().name + ": " + c.element().qty);  // c.element().name  c.element().qty
+      for(WordCount wordCount: c.element()) {
+        c.output(wordCount.name + ":" + wordCount.qty);
+      }
     }
   }
 
@@ -159,20 +163,19 @@ public class WordCountApplyFilter {
     }
   }
 
-  public static class UseGreaterThanFilter extends PTransform<PCollection<WordCount>,
-          PCollection<WordCount>> {
+  public static class LargestFilter extends PTransform<PCollection<WordCount>,
+          PCollection<List<WordCount>>> {
     @Override
-    public PCollection<WordCount> apply(PCollection<WordCount> words) {
+    public PCollection<List<WordCount>> apply(PCollection<WordCount> words) {
 
-      PCollection<WordCount> longWords =
-              words.apply(Filter.<WordCount>greaterThan(new WordCount("",20L)));
+      PCollection<List<WordCount>> largestValues = words.apply(Top.<WordCount>largest(10));
 
-      return longWords;
+      return largestValues;
     }
   }
 
   /**
-   * Options supported by {@link WordCountApplyFilter}.
+   * Options supported by {@link WordCountTopLargestTransform}.
    *
    * <p>Concept #4: Defining your own configuration options. Here, you can add your own arguments
    * to be processed by the command-line parser, and specify default values for them. You can then
@@ -222,7 +225,7 @@ public class WordCountApplyFilter {
      .apply(ParDo.of(new ExtractWordsFn()))
      .apply(new CountWords2())
      .apply(ParDo.of(new getWordsComparableFn()))
-     .apply(new UseGreaterThanFilter())
+     .apply(new LargestFilter())
      .apply(ParDo.of(new FormatComparableAsTextFn()))
      .apply(TextIO.Write.named("WriteCounts").to(options.getOutput()));
     p.run();
